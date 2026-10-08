@@ -8,6 +8,19 @@ enum LaunchAtLogin {
     }
     static var isEnabled: Bool { FileManager.default.fileExists(atPath: url.path) }
 
+    /// The agent stores an absolute path, so moving or reinstalling the app elsewhere would leave
+    /// it pointing at nothing. Called at launch: if the saved path is gone, point it at this copy.
+    /// A path that still exists is left alone, so running a second copy (say, a fresh build in the
+    /// project folder) doesn't take over the login item from the installed one.
+    static func repairIfMoved() {
+        guard isEnabled,
+              let plist = NSDictionary(contentsOf: url),
+              let saved = (plist["ProgramArguments"] as? [String])?.first,
+              !FileManager.default.fileExists(atPath: saved),
+              Bundle.main.executablePath != saved else { return }
+        set(true)
+    }
+
     static func set(_ on: Bool) {
         if on {
             guard let exe = Bundle.main.executablePath else { return }

@@ -100,18 +100,24 @@ struct DetailView: View {
     }
 }
 
+/// The full ranked list, or (from the chart legend) just what's grouped into “Other”.
 struct OtherAppsView: View {
     @EnvironmentObject var tracker: Tracker
     @Environment(\.dismiss) private var dismiss
     let analysis: Analysis
+    var showAll = false
+    let onSelect: (RankedApp) -> Void
+    let onQuit: (RankedApp) -> Void
 
     var body: some View {
-        let rest = Array(analysis.ranked.dropFirst(5))
+        let rest = showAll ? analysis.ranked : Array(analysis.ranked.dropFirst(5))
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("What's in “Other”").font(.title3.weight(.semibold))
-                    Text("Everything beyond the top 5, \(rest.count) in total").font(.caption).foregroundStyle(.secondary)
+                    Text(showAll ? "All apps & processes" : "What's in “Other”").font(.title3.weight(.semibold))
+                    Text(showAll ? "\(rest.count) in total · click one for details"
+                                 : "Everything beyond the top 5, \(rest.count) in total")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
@@ -119,7 +125,7 @@ struct OtherAppsView: View {
             ScrollView {
                 VStack(spacing: 14) {
                     ForEach(rest) { app in
-                        AppRow(app: app, analysis: analysis, onQuit: {})
+                        AppRow(app: app, analysis: analysis, onSelect: { onSelect(app) }, onQuit: { onQuit(app) })
                             .environmentObject(tracker)
                     }
                 }

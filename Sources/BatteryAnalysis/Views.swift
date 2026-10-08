@@ -118,11 +118,12 @@ enum DashTab: String, CaseIterable, Identifiable {
 }
 
 enum DashSheet: Identifiable {
-    case detail(RankedApp), other
+    case detail(RankedApp), other, all
     var id: String {
         switch self {
         case .detail(let a): "detail-\(a.name)"
         case .other: "other"
+        case .all: "all"
         }
     }
 }
@@ -142,6 +143,7 @@ struct DashboardView: View {
     @State private var onlyOnBattery = false
     @State private var appsOnly = false
     @State private var target: RankedApp?
+    @State private var targetProcesses = 0
     @State private var message: String?
     @State private var sheet: DashSheet?
     @State private var query = ""
@@ -158,10 +160,30 @@ struct DashboardView: View {
     }
 
     private func requestQuit(_ app: RankedApp) {
+        let set = {
+            targetProcesses = Killer.pids(for: app.name, appPath: tracker.appPaths[app.name]).count
+            target = app
+        }
         if sheet != nil {
             sheet = nil
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { target = app }
-        } else { target = app }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: set)
+        } else { set() }
+    }
+
+    /// Opens an app's detail, replacing any sheet already showing (e.g. from the app list).
+    private func openDetail(_ app: RankedApp) {
+        if sheet != nil {
+            sheet = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { sheet = .detail(app) }
+        } else { sheet = .detail(app) }
+    }
+
+    /// Explains how many processes a quit reaches, when it's more than one.
+    private func processCountNote(_ app: RankedApp) -> String {
+        guard targetProcesses > 1 else { return "" }
+        return isApp(app.name)
+            ? "\nThis stops all \(targetProcesses) of its processes."
+            : "\nThis stops all \(targetProcesses) running processes named “\(app.name)”."
     }
 
     private func exportCSV() {
@@ -201,8 +223,9 @@ struct DashboardView: View {
             case .detail(let app):
                 DetailView(app: app, range: range, onlyOnBattery: onlyOnBattery, onQuit: { requestQuit(app) })
                     .environmentObject(tracker)
-            case .other:
-                OtherAppsView(analysis: a)
+            case .other, .all:
+                OtherAppsView(analysis: a, showAll: sh.id == "all",
+                              onSelect: { openDetail($0) }, onQuit: { requestQuit($0) })
                     .environmentObject(tracker)
             }
         }
@@ -217,10 +240,11 @@ struct DashboardView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
+            let count = target.map(processCountNote) ?? ""
             if let n = note {
-                Text("\(n.text)\n\(n.importance.hint). macOS may restart it automatically.")
+                Text("\(n.text)\n\(n.importance.hint). macOS may restart it automatically.\(count)")
             } else {
-                Text("Unsaved work in this app may be lost.")
+                Text("Unsaved work in this app may be lost.\(count)")
             }
         }
         .alert("Heads up", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
@@ -332,7 +356,7 @@ struct DashboardView: View {
             VStack(alignment: .trailing, spacing: 6) {
                 Button("Open Battery Settings") { LowPower.openBatterySettings() }
                 if let d = drainer {
-                    Button("Quit \(d.name)") { target = d }
+                    Button("Quit \(d.name)") { requestQuit(d) }
                 }
             }
             .buttonStyle(.bordered).controlSize(.small)
@@ -361,14 +385,14 @@ struct DashboardView: View {
                  fillHeight: true) {
                 VStack(spacing: 14) {
                     ForEach(rows) { app in
-                        AppRow(app: app, analysis: a, onSelect: { sheet = .detail(app) }, onQuit: { requestQuit(app) })
+                        AppRow(app: app, analysis: a, onSelect: { openDetail(app) }, onQuit: { requestQuit(app) })
                     }
                     if searching && rows.isEmpty {
                         Text("Nothing matches. Try part of a name, or a word like “backup” or “Siri”.")
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     if !searching && a.ranked.count > 5 {
-                        Button { sheet = .other } label: {
+                        Button { sheet = .all } label: {
                             Label("See all \(a.ranked.count) apps", systemImage: "list.bullet")
                         }
                         .buttonStyle(.borderless).font(.caption).foregroundStyle(.secondary)
