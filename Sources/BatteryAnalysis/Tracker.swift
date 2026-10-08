@@ -23,10 +23,16 @@ final class Tracker: ObservableObject {
     /// Bumped whenever samples or app paths change; cached analyses are reused until it moves,
     /// so re-renders (typing in search, toggling tabs) don't rescan up to 30 days of history.
     private var version = 0
-    private var cache: [String: Any] = [:]
+    private var cache: [String: CacheEntry] = [:]
     private var cacheVersion = -1
+    private struct CacheEntry {
+        let version: Int
+        let at: Double
+        let maxAge: Double
+        let value: Any
+    }
 
-    static let interval = 30
+    nonisolated static let interval = 30
     private let keep: Double = 30 * 86400
     private let dir: URL
     private var file: URL { dir.appendingPathComponent("samples.jsonl") }
@@ -194,11 +200,17 @@ final class Tracker: ObservableObject {
     func window(since t: Double) -> ArraySlice<Sample> { samples[startIndex(from: t)...] }
 
     /// Returns the cached value for `key`, computing it only if the data changed since last time.
-    func memo<T>(_ key: String, _ make: () -> T) -> T {
-        if cacheVersion != version { cache.removeAll(keepingCapacity: true); cacheVersion = version }
-        if let v = cache[key] as? T { return v }
+    /// With `maxAge`, a value is also reused for that many seconds after new samples arrive: the
+    /// week and month views would otherwise rescan their whole range on every 30 s sample.
+    func memo<T>(_ key: String, maxAge: Double = 0, _ make: () -> T) -> T {
+        let now = Date().timeIntervalSince1970
+        if cacheVersion != version {
+            cache = cache.filter { now - $0.value.at < $0.value.maxAge }
+            cacheVersion = version
+        }
+        if let e = cache[key], let v = e.value as? T, e.version == version || now - e.at < e.maxAge { return v }
         let v = make()
-        cache[key] = v
+        cache[key] = CacheEntry(version: version, at: now, maxAge: maxAge, value: v)
         return v
     }
 
@@ -219,14 +231,25 @@ final class Tracker: ObservableObject {
     }
 
     func analyze(range: TimeRange, onlyOnBattery: Bool, appsOnly: Bool = false) -> Analysis {
-        memo("analyze|\(range.rawValue)|\(onlyOnBattery)|\(appsOnly)") {
-            computeAnalysis(range: range, onlyOnBattery: onlyOnBattery, appsOnly: appsOnly)
+        memo("analyze|\(range.rawValue)|\(onlyOnBattery)|\(appsOnly)", maxAge: range.cacheAge) {
+            let now = Date().timeIntervalSince1970
+            let s = window(since: now - range.seconds).filter { !onlyOnBattery || !$0.ac }
+            return Tracker.analysis(of: s, appPaths: appPaths, appsOnly: appsOnly, now: now)
         }
     }
 
-    private func computeAnalysis(range: TimeRange, onlyOnBattery: Bool, appsOnly: Bool) -> Analysis {
-        let now = Date().timeIntervalSince1970
-        let s = window(since: now - range.seconds).filter { !onlyOnBattery || !$0.ac }
+    /// Splits `first...now` into up to 48 equal buckets. When a bucket is wider than two sample
+    /// intervals, an empty one means the Mac was asleep (or the range was filtered out), so charts
+    /// draw it as zero instead of a line straight across. Narrower empty buckets are just
+    /// rounding (30 s samples landing unevenly) and are skipped.
+    nonisolated static func buckets(first: Double, now: Double, count: Int) -> (count: Int, len: Double, fillGaps: Bool) {
+        let n = max(2, min(48, count))
+        let len = max(1, now - first) / Double(n)
+        return (n, len, len > 2 * Double(interval))
+    }
+
+    /// Rankings and chart series for a set of samples. Pure, so it can be tested directly.
+    nonisolated static func analysis(of s: [Sample], appPaths: [String: String], appsOnly: Bool, now: Double) -> Analysis {
         var out = Analysis()
         out.sampleCount = s.count
         guard let first = s.first else { return out }
@@ -244,8 +267,7 @@ final class Tracker: ObservableObject {
         // Bucket into ~48 slices, averaging energy impact within each.
         // Span only the data we have, so young histories still draw.
         let start = first.t
-        let buckets = max(2, min(48, s.count))
-        let len = max(1, now - start) / Double(buckets)
+        let (buckets, len, fillGaps) = Tracker.buckets(first: start, now: now, count: s.count)
         var sums = [[String: Double]](repeating: [:], count: buckets)
         var counts = [Int](repeating: 0, count: buckets)
         for x in s {
@@ -253,10 +275,12 @@ final class Tracker: ObservableObject {
             counts[i] += 1
             for (k, v) in x.a where !appsOnly || appPaths[k] != nil { sums[i][topSet.contains(k) ? k : "Other", default: 0] += v }
         }
-        for i in 0..<buckets where counts[i] > 0 {
+        let last = counts.lastIndex { $0 > 0 } ?? 0
+        for i in 0...last where counts[i] > 0 || fillGaps {
             let d = Date(timeIntervalSince1970: start + (Double(i) + 0.5) * len)
             for n in out.seriesNames {
-                out.series.append(SeriesPoint(date: d, app: n, value: (sums[i][n] ?? 0) / Double(counts[i])))
+                let v = counts[i] > 0 ? (sums[i][n] ?? 0) / Double(counts[i]) : 0
+                out.series.append(SeriesPoint(date: d, app: n, value: v))
             }
         }
 

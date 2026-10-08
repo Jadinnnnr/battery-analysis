@@ -115,9 +115,11 @@ enum ProcessCatalog {
     ]
 
     /// Description for system-level processes. Returns nil for regular apps.
+    /// The catalog is checked first: Finder, Dock, loginwindow and others are .app bundles
+    /// in /System/Library/CoreServices, and must still be marked (and locked) as system processes.
     static func note(for name: String, isApp: Bool) -> ProcessNote? {
-        if isApp { return nil }
         if let n = known[name] { return n }
+        if isApp { return nil }
         if name.hasPrefix("com.apple.") {
             return .init(text: "An Apple system extension or helper (\(name.replacingOccurrences(of: "com.apple.", with: ""))).", importance: .important)
         }

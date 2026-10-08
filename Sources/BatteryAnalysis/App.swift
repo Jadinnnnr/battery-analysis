@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
+        LaunchAtLogin.repairIfMoved()
         Task { @MainActor in
             Alerts.shared.registerCategories()
             LiveWatts.shared.configure()
@@ -77,9 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         guard response.actionIdentifier == "QUIT",
-              let name = response.notification.request.content.userInfo["name"] as? String else { return }
-        let path = response.notification.request.content.userInfo["path"] as? String
-        _ = Killer.quit(name: name, appPath: (path?.isEmpty ?? true) ? nil : path, force: false)
+              let name = response.notification.request.content.userInfo["name"] as? String,
+              let path = response.notification.request.content.userInfo["path"] as? String, !path.isEmpty else { return }
+        _ = Killer.quit(name: name, appPath: path, force: false)
     }
 }
 

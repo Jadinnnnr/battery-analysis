@@ -30,7 +30,7 @@ extension Tracker {
     }
 
     func history(for name: String, range: TimeRange, onlyOnBattery: Bool) -> AppHistory {
-        memo("history|\(name)|\(range.rawValue)|\(onlyOnBattery)") { computeHistory(for: name, range: range, onlyOnBattery: onlyOnBattery) }
+        memo("history|\(name)|\(range.rawValue)|\(onlyOnBattery)", maxAge: range.cacheAge) { computeHistory(for: name, range: range, onlyOnBattery: onlyOnBattery) }
     }
 
     private func computeHistory(for name: String, range: TimeRange, onlyOnBattery: Bool) -> AppHistory {
@@ -38,17 +38,17 @@ extension Tracker {
         let s = window(since: now - range.seconds).filter { !onlyOnBattery || !$0.ac }
         var h = AppHistory()
         if let first = s.first {
-            let span = max(1, now - first.t)
-            let buckets = max(2, min(48, s.count))
-            let len = span / Double(buckets)
+            let (buckets, len, fillGaps) = Tracker.buckets(first: first.t, now: now, count: s.count)
             var sums = [Double](repeating: 0, count: buckets)
             var counts = [Int](repeating: 0, count: buckets)
             for x in s {
                 let i = min(buckets - 1, max(0, Int((x.t - first.t) / len)))
                 counts[i] += 1; sums[i] += x.a[name] ?? 0
             }
-            for i in 0..<buckets where counts[i] > 0 {
-                h.points.append((Date(timeIntervalSince1970: first.t + (Double(i) + 0.5) * len), sums[i] / Double(counts[i])))
+            let last = counts.lastIndex { $0 > 0 } ?? 0
+            for i in 0...last where counts[i] > 0 || fillGaps {
+                let v = counts[i] > 0 ? sums[i] / Double(counts[i]) : 0
+                h.points.append((Date(timeIntervalSince1970: first.t + (Double(i) + 0.5) * len), v))
             }
             h.average = s.map { $0.a[name] ?? 0 }.reduce(0, +) / Double(s.count)
             let mid = s.count / 2
@@ -73,7 +73,7 @@ extension Tracker {
     }
 
     func compareModes(range: TimeRange, appsOnly: Bool) -> [ModeShare] {
-        memo("compare|\(range.rawValue)|\(appsOnly)") { computeCompare(range: range, appsOnly: appsOnly) }
+        memo("compare|\(range.rawValue)|\(appsOnly)", maxAge: range.cacheAge) { computeCompare(range: range, appsOnly: appsOnly) }
     }
 
     private func computeCompare(range: TimeRange, appsOnly: Bool) -> [ModeShare] {
@@ -90,7 +90,7 @@ extension Tracker {
     }
 
     func weekly(appsOnly: Bool) -> WeeklySummary {
-        memo("weekly|\(appsOnly)") { computeWeekly(appsOnly: appsOnly) }
+        memo("weekly|\(appsOnly)", maxAge: TimeRange.week.cacheAge) { computeWeekly(appsOnly: appsOnly) }
     }
 
     private func computeWeekly(appsOnly: Bool) -> WeeklySummary {

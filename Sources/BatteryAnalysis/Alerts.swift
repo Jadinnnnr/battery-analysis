@@ -10,9 +10,11 @@ final class Alerts {
 
     func registerCategories() {
         let quit = UNNotificationAction(identifier: "QUIT", title: "Quit it", options: [])
+        // "Quit it" is offered only for real apps (see `post`); background processes get no action.
         center.setNotificationCategories([
             UNNotificationCategory(identifier: "DRAIN", actions: [quit], intentIdentifiers: []),
             UNNotificationCategory(identifier: "LOWBATT", actions: [quit], intentIdentifiers: []),
+            UNNotificationCategory(identifier: "INFO", actions: [], intentIdentifiers: []),
         ])
     }
 
@@ -23,8 +25,14 @@ final class Alerts {
     private func post(_ title: String, _ body: String, category: String, name: String?, path: String?) {
         let c = UNMutableNotificationContent()
         c.title = title; c.body = body; c.sound = .default
-        c.categoryIdentifier = category
-        if let name { c.userInfo = ["name": name, "path": path ?? ""] }
+        // Quitting from a notification skips the confirmation dialog, so it's limited to apps:
+        // they get a normal Quit request, never a signal sent to every process with that name.
+        if let name, let path {
+            c.categoryIdentifier = category
+            c.userInfo = ["name": name, "path": path]
+        } else {
+            c.categoryIdentifier = "INFO"
+        }
         center.add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
     }
 

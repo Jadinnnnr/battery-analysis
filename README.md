@@ -17,8 +17,8 @@ Activity Monitor shows energy use for the last 12 hours, but it lists system pro
 - Shows battery health (capacity, cycle count), a weekly summary, and how usage differs on battery vs. plugged in.
 - Shows your Mac's current power draw next to the ⚡ in the menu bar.
 - Suggests Low Power Mode when the battery is low and power draw is high, and turns the ⚡ yellow. You set the thresholds.
-- Optionally notifies you when one app is using most of your energy, or when the battery is low.
-- Lets you quit or force quit a process from the list. Processes macOS needs are locked.
+- Notifies you when one app is using most of your energy, or when the battery is low. Both are on by default and can be turned off in Settings.
+- Lets you quit or force quit a process from the list, after confirming. The dialog says how many processes that covers. Processes macOS needs are locked.
 - Search, filter to apps only or time on battery, and export to CSV.
 
 It runs from the menu bar and only appears in the Dock while the dashboard is open.
@@ -28,7 +28,7 @@ It runs from the menu bar and only appears in the Dock while the dashboard is op
 macOS 14 or later
 Xcode or the Swift 5.9+ toolchain to build.
 
-Tested on Apple Silicon. The Intel build runs under Rosetta 2, but I haven't tried it on a real Intel Mac, where the battery and power readings may differ.
+Tested on Apple Silicon. An x86_64 build also works under Rosetta 2 on Apple Silicon, but I haven't tried it on a real Intel Mac, where the battery and power readings may differ.
 
 ## Build
 
@@ -39,6 +39,12 @@ cd battery-analysis
 ```
 
 `./build.sh` on its own builds `BatteryAnalysis.app` in the project folder; `--install` also copies it to `/Applications`.
+
+Run the tests with:
+
+```bash
+swift test
+```
 
 The app is ad-hoc signed and not notarized. A copy you build yourself opens normally. If you move a built copy to another Mac and macOS blocks it, go to System Settings › Privacy & Security and click Open Anyway.
 
@@ -58,7 +64,7 @@ There's no network code, and the app never asks for administrator rights. It wri
 - `~/Library/Preferences/local.batteryanalysis.plist`: settings
 - `~/Library/LaunchAgents/local.batteryanalysis.login.plist`: only if you turn on launch at login
 
-It only stops a process when you confirm Quit or Force Quit, or tap "Quit it" on a notification. It never changes Low Power Mode itself.
+It only stops a process when you confirm Quit or Force Quit, or tap "Quit it" on a notification. Notifications offer "Quit it" only for apps, which get a normal Quit request. It never changes Low Power Mode itself.
 
 ## Uninstall
 
@@ -97,7 +103,7 @@ defaults delete local.batteryanalysis
 | `Settings.swift` | Preferences, launch at login |
 | `Models.swift` | Shared data types |
 
-All in `Sources/BatteryAnalysis/`. `build.sh` packages and signs the app bundle.
+All in `Sources/BatteryAnalysis/`. Tests are in `Tests/BatteryAnalysisTests/`. `build.sh` packages and signs the app bundle.
 
 ## License
 

@@ -8,11 +8,19 @@ enum Killer {
         case denied      // owned by root / another user
     }
 
-    /// PIDs of every process that rolls up under this app/process name (read in-process, no `ps`).
-    static func pids(for name: String) -> [Int32] {
+    /// Whether a process at `path` belongs to this entry. Apps match on their bundle path, so
+    /// two copies of an app (or an unrelated app with the same name) aren't caught together.
+    static func matches(path: String, name: String, appPath: String?) -> Bool {
+        let id = Sampler.appIdentity(path)
+        if let appPath { return id.appPath == appPath }
+        return id.appPath == nil && id.name == name
+    }
+
+    /// PIDs of every process that rolls up under this entry (read in-process, no `ps`).
+    static func pids(for name: String, appPath: String?) -> [Int32] {
         let me = getpid()
         return Sampler.allPIDs().filter { pid in
-            pid != me && Sampler.path(of: pid).map { Sampler.appIdentity($0).name == name } == true
+            pid != me && Sampler.path(of: pid).map { matches(path: $0, name: name, appPath: appPath) } == true
         }
     }
 
@@ -25,7 +33,7 @@ enum Killer {
             }
             if count > 0 { return .done(count) }
         }
-        let list = pids(for: name)
+        let list = pids(for: name, appPath: appPath)
         if list.isEmpty { return .notRunning }
         var denied = 0
         for pid in list {

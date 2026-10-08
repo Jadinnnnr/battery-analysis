@@ -29,6 +29,9 @@ enum TimeRange: String, CaseIterable, Identifiable {
         case .month: 2592000
         }
     }
+    /// How long an analysis of this range may be reused while new samples arrive. A 30 s sample
+    /// barely moves a week or a month, and rescanning one is the most expensive thing the UI does.
+    var cacheAge: Double { self == .week || self == .month ? 300 : 0 }
 }
 
 struct SeriesPoint: Identifiable {

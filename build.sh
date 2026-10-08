@@ -25,7 +25,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
-codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+# codesign rejects extended attributes (Finder info, iCloud Drive metadata) inside the bundle.
+xattr -cr "$APP"
+codesign --force --sign - "$APP"
 echo "Built $APP"
 if [[ "$1" == "--install" ]]; then
   rm -rf "/Applications/$APP" && cp -R "$APP" /Applications/
