@@ -16,7 +16,7 @@ Activity Monitor shows energy use for the last 12 hours, but it lists system pro
 - Charts energy use over time and battery level. Click an app to see its own history and trend.
 - Shows battery health (capacity, cycle count), a weekly summary, and how usage differs on battery vs. plugged in.
 - Shows your Mac's current power draw next to the ⚡ in the menu bar.
-- Suggests Low Power Mode when the battery is low and power draw is high, and turns the ⚡ yellow. You set the thresholds.
+- Suggests Low Power Mode when the battery is low and power draw is high, and turns the ⚡ yellow. Customizable thresholds.
 - Optionally notifies you when one app is using most of your energy, or when the battery is low.
 - Lets you quit or force quit a process from the list. Processes macOS needs are locked.
 - Search, filter to apps only or time on battery, and export to CSV.
