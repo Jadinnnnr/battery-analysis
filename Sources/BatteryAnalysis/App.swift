@@ -86,12 +86,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
 /// Menu bar icon. Lives as long as the app does, so it can reopen the dashboard on request.
 /// Turns yellow when a Low Power Mode suggestion is waiting and the dashboard is closed.
+/// With wattage on, connected devices follow the total by port number: "22 W  ④ 15 W".
 struct MenuBarLabel: View {
     @Environment(\.openWindow) private var openWindow
     @ObservedObject private var status = MenuBarStatus.shared
     @ObservedObject private var ui = UIState.shared
     @ObservedObject private var settings = Settings.shared
     @ObservedObject private var live = LiveWatts.shared
+    @ObservedObject private var connected = ConnectedDevices.shared
     private var alert: Bool { status.suggesting && !ui.dashboardOpen }
     private var watts: Double? { settings.showWatts ? (live.watts ?? status.fallbackWatts) : nil }
 
@@ -107,11 +109,20 @@ struct MenuBarLabel: View {
     var body: some View {
         HStack(spacing: 3) {
             if alert { Image(nsImage: Self.yellowBolt) } else { Image(systemName: "bolt.fill") }
-            if let watts { Text(wattsText(watts)).monospacedDigit() }
+            if settings.showWatts, let text = wattsLine { Text(text).monospacedDigit() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .showDashboard)) { _ in
             Task { @MainActor in showDashboard(openWindow) }
         }
+    }
+
+    /// Devices are labeled by port number rather than icon: the menu bar didn't draw SF Symbols
+    /// placed inside the label's text. At most two devices fit; more show as "+N".
+    private var wattsLine: String? {
+        var parts = connected.devices.prefix(2).map { "\(portBadge($0.port)) \(deviceWattsText($0.watts))" }
+        if connected.devices.count > 2 { parts.append("+\(connected.devices.count - 2)") }
+        if let watts { parts.insert(wattsText(watts), at: 0) }
+        return parts.isEmpty ? nil : parts.joined(separator: "  ")
     }
 }
 

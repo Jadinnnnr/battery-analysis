@@ -1,36 +1,44 @@
 import Foundation
 import IOKit
 
-/// Reads total system power ("PSTR") from the SMC, about once a second resolution, no admin rights.
-/// The key is undocumented, so callers fall back to battery telemetry when it isn't available.
-final class SMCPower {
+/// Reads float sensors from the SMC, no admin rights. The keys are undocumented and vary by
+/// model, so every key is looked up first and callers handle it being missing.
+@MainActor
+final class SMC {
+    static let shared = SMC()
+
+    struct Key {
+        let code: UInt32
+        let size: UInt32
+    }
+
     private var conn: io_connect_t = 0
-    private var keySize: UInt32 = 0
-    private static let key: UInt32 = 0x50535452          // "PSTR"
     private static let floatType: UInt32 = 0x666C7420    // "flt "
 
-    init?() {
+    private init?() {
         let svc = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
         guard svc != 0 else { return nil }
         defer { IOObjectRelease(svc) }
         guard IOServiceOpen(svc, mach_task_self_, 0, &conn) == KERN_SUCCESS else { return nil }
-        var b = [UInt8](repeating: 0, count: 80)
-        Self.put32(&b, 0, Self.key); b[42] = 9          // kSMCGetKeyInfo
-        guard let info = call(b), Self.get32(info, 32) == Self.floatType else {
-            IOServiceClose(conn)
-            return nil
-        }
-        keySize = Self.get32(info, 28)
     }
 
     deinit { IOServiceClose(conn) }
 
-    func read() -> Double? {
+    /// A float key such as "PSTR", or nil if this Mac doesn't have it.
+    func floatKey(_ name: String) -> Key? {
+        let code = name.utf8.reduce(UInt32(0)) { $0 << 8 | UInt32($1) }
         var b = [UInt8](repeating: 0, count: 80)
-        Self.put32(&b, 0, Self.key); Self.put32(&b, 28, keySize); b[42] = 5   // kSMCReadKey
+        Self.put32(&b, 0, code); b[42] = 9          // kSMCGetKeyInfo
+        guard let info = call(b), Self.get32(info, 32) == Self.floatType else { return nil }
+        return Key(code: code, size: Self.get32(info, 28))
+    }
+
+    func read(_ key: Key) -> Double? {
+        var b = [UInt8](repeating: 0, count: 80)
+        Self.put32(&b, 0, key.code); Self.put32(&b, 28, key.size); b[42] = 5   // kSMCReadKey
         guard let out = call(b) else { return nil }
-        let w = Double(Array(out[48..<52]).withUnsafeBytes { $0.load(as: Float.self) })
-        return w.isFinite && w >= 0 ? w : nil
+        let v = Double(Array(out[48..<52]).withUnsafeBytes { $0.load(as: Float.self) })
+        return v.isFinite ? v : nil
     }
 
     // SMCKeyData_t is 80 bytes; fields are written at their C offsets by hand because Swift
@@ -56,30 +64,45 @@ final class LiveWatts: ObservableObject {
     static let shared = LiveWatts()
     @Published private(set) var watts: Double?
 
-    private let smc = SMCPower()
+    /// Total system power ("PSTR"), about once a second resolution.
+    private let pstr = SMC.shared?.floatKey("PSTR")
     private var timer: Timer?
 
-    var sensorAvailable: Bool { smc != nil }
+    var sensorAvailable: Bool { pstr != nil }
 
-    /// Starts, restarts or stops polling to match the current settings.
+    /// Starts, restarts or stops polling to match the current settings. The same tick also
+    /// updates connected devices, so they share one wakeup.
     func configure() {
         timer?.invalidate()
         timer = nil
         let settings = Settings.shared
-        guard settings.showWatts, smc != nil else { watts = nil; return }
+        let devices = ConnectedDevices.shared
+        if !settings.showWatts { watts = nil }
+        guard (settings.showWatts && pstr != nil) || devices.available else { return }
         let interval = Double(settings.wattsInterval)
-        refresh()
+        tick()
         let t = Timer(timeInterval: interval, repeats: true) { _ in
-            Task { @MainActor in LiveWatts.shared.refresh() }
+            Task { @MainActor in LiveWatts.shared.tick() }
         }
         t.tolerance = interval * 0.1   // let macOS coalesce the wakeup with others
         RunLoop.main.add(t, forMode: .common)
         timer = t
     }
 
+    private func tick() {
+        let devices = ConnectedDevices.shared
+        devices.refresh()
+        // The total is also read while devices are connected, so it can be shown next to them.
+        if Settings.shared.showWatts || !devices.devices.isEmpty {
+            refresh()
+        } else if watts != nil {
+            watts = nil
+        }
+    }
+
     /// Only publishes when the displayed text changes, so unchanged readings redraw nothing.
     private func refresh() {
-        guard let w = smc?.read() else { return }
+        guard let pstr, let w = SMC.shared?.read(pstr), w >= 0 else { return }
         if watts.map(wattsText) != wattsText(w) { watts = w }
     }
 }

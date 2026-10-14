@@ -16,6 +16,7 @@ Activity Monitor shows energy use for the last 12 hours, but it lists system pro
 - Charts energy use over time and battery level. Click an app to see its own history and trend.
 - Shows battery health (capacity, cycle count), a weekly summary, and how usage differs on battery vs. plugged in.
 - Shows your Mac's current power draw next to the ⚡ in the menu bar.
+- Lists devices plugged into the USB-C ports (iPhone, iPad, drives and so on) with the power each is drawing from your Mac, next to the Mac's total. In the menu bar they appear by port number, e.g. `22 W  ④ 15 W`.
 - Suggests Low Power Mode when the battery is low and power draw is high, and turns the ⚡ yellow. Customizable thresholds.
 - Notifies you when one app is using most of your energy, or when the battery is low. Both are on by default and can be turned off in Settings.
 - Lets you quit or force quit a process from the list, after confirming. The dialog says how many processes that covers. Processes macOS needs are locked.
@@ -54,6 +55,8 @@ The app keeps one `top` process running in logging mode and reads each process's
 
 The menu bar wattage comes from the Mac's system power sensor (SMC key `PSTR`), read every 5 seconds by default (2 and 10 are options). Macs without that sensor fall back to the battery's own reading, which macOS only refreshes about once a minute.
 
+Connected devices come from the USB-C port controllers, which report what's attached, and the SMC's per-port current and voltage sensors (`D1JI`/`D1JV` and so on). Which sensor belongs to which port isn't documented: the app assumes they follow port order, and corrects that the first time it sees a single device plugged in. Ports above 5 V are taking power in from a charger, so they aren't listed.
+
 In testing on an Apple Silicon MacBook, the app used about 0.3% of one CPU core and its `top` process about another 0.3%. Updating the wattage every 2 seconds instead of 5 adds roughly 0.2%.
 
 ## Privacy
@@ -83,6 +86,7 @@ defaults delete local.batteryanalysis
 - Energy Impact is macOS's estimate, not a measurement of battery drain per app.
 - Each sample covers the 80 heaviest processes, and the history keeps the top 12 apps per sample.
 - 87 common system processes have written descriptions. The rest get a generic one.
+- Connected devices need per-port power sensors, which I've only confirmed on an M5 MacBook Pro. Macs without them don't show the list. Devices behind a hub share one reading.
 
 ## Code
 
@@ -90,8 +94,9 @@ defaults delete local.batteryanalysis
 |---|---|
 | `App.swift` | Entry point, menu bar icon, Dock behavior |
 | `Sampler.swift` | `top` stream, PID-to-app mapping, battery state |
-| `LivePower.swift` | Wattage from the SMC power sensor |
+| `LivePower.swift` | SMC sensor reads, menu bar wattage |
 | `Health.swift` | Battery health, Low Power Mode state |
+| `Ports.swift` | Connected devices and per-port power |
 | `Tracker.swift` | History storage and the main analysis |
 | `Analytics.swift` | Per-app history, weekly summary, CSV export |
 | `Views.swift` | Dashboard and menu bar popover |

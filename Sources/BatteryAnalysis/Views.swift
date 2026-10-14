@@ -316,6 +316,7 @@ struct DashboardView: View {
             BatteryRing(info: b)
             VStack(alignment: .leading, spacing: 8) {
                 Text(statusText(b)).font(.subheadline).foregroundStyle(.secondary)
+                ConnectedDevicesChips()
                 if let top = a.ranked.first {
                     HStack(spacing: 12) {
                         AppIcon(name: top.name, size: 40)
@@ -517,6 +518,7 @@ struct MenuBarView: View {
                 Spacer()
                 Text(statusText(tracker.battery)).font(.caption).foregroundStyle(.secondary)
             }
+            ConnectedDevicesSection()
             Divider()
             Text("Biggest drains · last hour").font(.caption).foregroundStyle(.secondary)
             if a.ranked.isEmpty { Text("Collecting data…").font(.callout) }
@@ -545,6 +547,69 @@ struct MenuBarView: View {
     }
 }
 
+/// Total power the Mac is drawing, for showing next to connected devices.
+@MainActor
+private func totalWatts(_ live: LiveWatts, _ status: MenuBarStatus) -> Double? { live.watts ?? status.fallbackWatts }
+
+/// Devices plugged into the Mac and the power each is drawing from it, in the menu bar popover.
+/// Its own view so device readings redraw only this section.
+struct ConnectedDevicesSection: View {
+    @ObservedObject private var connected = ConnectedDevices.shared
+    @ObservedObject private var live = LiveWatts.shared
+    @ObservedObject private var status = MenuBarStatus.shared
+
+    var body: some View {
+        if !connected.devices.isEmpty {
+            Divider()
+            HStack {
+                Text("Connected devices").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if let w = totalWatts(live, status) {
+                    Text("Mac total \(wattsText(w))").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+            ForEach(connected.devices) { d in
+                HStack(spacing: 8) {
+                    Image(systemName: d.kind.symbol).frame(width: 20)
+                    Text(d.name).lineLimit(1)
+                    Text(portBadge(d.port)).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(deviceWattsText(d.watts)).monospacedDigit().foregroundStyle(.secondary)
+                }
+                .font(.callout)
+                .help("Power your Mac is supplying to this device on USB-C port \(d.port)")
+            }
+        }
+    }
+}
+
+/// The same devices as compact chips under the dashboard's battery status.
+struct ConnectedDevicesChips: View {
+    @ObservedObject private var connected = ConnectedDevices.shared
+    @ObservedObject private var live = LiveWatts.shared
+    @ObservedObject private var status = MenuBarStatus.shared
+
+    var body: some View {
+        if !connected.devices.isEmpty {
+            HStack(spacing: 8) {
+                ForEach(connected.devices) { d in
+                    Label {
+                        Text("\(d.name) \(portBadge(d.port)) · \(deviceWattsText(d.watts))").monospacedDigit().lineLimit(1)
+                    } icon: {
+                        Image(systemName: d.kind.symbol)
+                    }
+                    .font(.caption)
+                    .padding(.horizontal, 9).padding(.vertical, 4)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                    .help("Power your Mac is supplying to this device on USB-C port \(d.port)")
+                }
+                if let w = totalWatts(live, status) {
+                    Text("of \(wattsText(w)) total").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
 
 /// Makes the menu bar popover's window opaque (no translucent material or see-through border),
 /// and resizes it to fit its content. The system panel grows when content grows but never

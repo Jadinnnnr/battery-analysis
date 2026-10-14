@@ -221,13 +221,24 @@ final class Tracker: ObservableObject {
         let st = Settings.shared
         guard st.lpmSuggest, battery.hasBattery, !battery.pluggedIn, !lowPower else { return nil }
         let pctText = "\(Int(battery.percent.rounded()))%"
-        if battery.percent <= Double(st.lpmCritical) { return "Battery is at \(pctText)." }
+        if battery.percent <= Double(st.lpmCritical) { return "Battery is at \(pctText)." + chargingDevicesNote }
         if battery.percent <= Double(st.lpmPercent) {
             let w = LiveWatts.shared.watts ?? health?.systemWatts ?? 0
-            if st.lpmWatts == 0 { return "Battery is at \(pctText)." }
-            if w >= Double(st.lpmWatts) { return "Battery is at \(pctText) and your Mac is using \(String(format: "%.0f", w)) W." }
+            if st.lpmWatts == 0 { return "Battery is at \(pctText)." + chargingDevicesNote }
+            if w >= Double(st.lpmWatts) {
+                return "Battery is at \(pctText) and your Mac is using \(String(format: "%.0f", w)) W." + chargingDevicesNote
+            }
         }
         return nil
+    }
+
+    /// Mentions devices charging from the Mac, which can draw as much as the Mac itself.
+    private var chargingDevicesNote: String {
+        let charging = ConnectedDevices.shared.devices.filter { $0.watts >= 2 }
+        guard !charging.isEmpty else { return "" }
+        let names = ListFormatter.localizedString(byJoining: charging.map(\.name))
+        let w = charging.map(\.watts).reduce(0, +)
+        return " \(names) \(charging.count == 1 ? "is" : "are") drawing \(wattsText(w)) from your Mac."
     }
 
     func analyze(range: TimeRange, onlyOnBattery: Bool, appsOnly: Bool = false) -> Analysis {

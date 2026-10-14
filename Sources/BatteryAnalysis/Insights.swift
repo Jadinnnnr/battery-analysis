@@ -126,7 +126,7 @@ struct SettingsView: View {
                     VStack(spacing: 16) {
                         row("Launch at login", "Starts quietly in the menu bar, no window.", $settings.launchAtLogin)
                         row("Show wattage in menu bar", LiveWatts.shared.sensorAvailable
-                            ? "Live power draw next to the bolt, from your Mac's power sensor."
+                            ? "Live power draw next to the bolt, from your Mac's power sensor, plus any devices plugged into it."
                             : "Live power draw next to the bolt. This Mac has no fast power sensor, so it updates about once a minute.",
                             $settings.showWatts)
                         if LiveWatts.shared.sensorAvailable {

@@ -107,3 +107,52 @@ final class AnalysisTests: XCTestCase {
         XCTAssertTrue(a.series.allSatisfy { $0.value > 0 })
     }
 }
+
+final class ConnectedDeviceTests: XCTestCase {
+    func testDeviceKinds() {
+        XCTAssertEqual(DeviceKind.guess(name: "iPhone", interfaceClasses: [6, 255]), .iPhone)
+        XCTAssertEqual(DeviceKind.guess(name: "iPad Pro", interfaceClasses: []), .iPad)
+        XCTAssertEqual(DeviceKind.guess(name: "Pixel 9", interfaceClasses: [6]), .phone)
+        XCTAssertEqual(DeviceKind.guess(name: "T7 Shield", interfaceClasses: [8]), .storage)
+        // Webcams also have audio interfaces; video wins.
+        XCTAssertEqual(DeviceKind.guess(name: "Brio 500", interfaceClasses: [1, 14]), .camera)
+        XCTAssertEqual(DeviceKind.guess(name: "Magic Keyboard", interfaceClasses: [3]), .input)
+        XCTAssertEqual(DeviceKind.guess(name: "Gadget", interfaceClasses: [255]), .other)
+    }
+
+    private func port(_ n: Int) -> PortScanner.Port {
+        PortScanner.Port(id: "Port-USB-C@\(n)", number: n, controller: n - 1, active: false, partnerName: nil)
+    }
+
+    func testSensorsDefaultToPortOrder() {
+        // M5 MacBook Pro: USB-C@1, @2, @4 take D1-D3 (D4 is MagSafe).
+        let map = ConnectedDevices.sensorMap(ports: [port(4), port(1), port(2)], sensors: [4, 2, 1, 3], learned: [:])
+        XCTAssertEqual(map, ["Port-USB-C@1": 1, "Port-USB-C@2": 2, "Port-USB-C@4": 3])
+    }
+
+    func testLearnedPairOverridesGuess() {
+        let map = ConnectedDevices.sensorMap(ports: [port(1), port(2)], sensors: [1, 2], learned: ["Port-USB-C@1": 2])
+        XCTAssertEqual(map["Port-USB-C@1"], 2)
+        XCTAssertNil(map["Port-USB-C@2"])   // its guessed sensor was taken
+    }
+
+    func testLearningNeedsOneActivePortAndOneDrawingSensor() {
+        let phone: ConnectedDevices.Reading = (3.0, 5.2)
+        let idle: ConnectedDevices.Reading = (0, 0)
+        let charger: ConnectedDevices.Reading = (3.0, 20.0)   // power coming in, not going out
+        XCTAssertEqual(ConnectedDevices.learn(active: ["A"], readings: [1: idle, 3: phone])?.sensor, 3)
+        XCTAssertEqual(ConnectedDevices.learn(active: ["A"], readings: [3: phone, 4: charger])?.sensor, 3)
+        XCTAssertNil(ConnectedDevices.learn(active: ["A", "B"], readings: [3: phone]))
+        XCTAssertNil(ConnectedDevices.learn(active: ["A"], readings: [1: phone, 3: phone]))
+    }
+}
+
+final class PortBadgeTests: XCTestCase {
+    func testCircledDigits() {
+        XCTAssertEqual(portBadge(1), "①")
+        XCTAssertEqual(portBadge(4), "④")
+        XCTAssertEqual(portBadge(20), "⑳")
+        XCTAssertEqual(portBadge(21), "#21")
+        XCTAssertEqual(portBadge(0), "#0")
+    }
+}
