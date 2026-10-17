@@ -1,6 +1,7 @@
-import Foundation
+import AppKit
 
 /// Starts the app at login in the background (no window) via a per-user LaunchAgent.
+@MainActor
 enum LaunchAtLogin {
     private static var url: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -35,6 +36,18 @@ enum LaunchAtLogin {
         } else {
             try? FileManager.default.removeItem(at: url)
         }
+        syncRelaunch()
+    }
+
+    private static var relaunchDisabled = false
+
+    /// With the login agent on, macOS shouldn't also reopen the app from the previous session
+    /// ("Reopen windows when logging back in"); that started a second copy, with its dashboard
+    /// open. AppKit counts disable/enable calls, so only transitions are passed on.
+    static func syncRelaunch() {
+        guard isEnabled != relaunchDisabled else { return }
+        relaunchDisabled = isEnabled
+        if relaunchDisabled { NSApp.disableRelaunchOnLogin() } else { NSApp.enableRelaunchOnLogin() }
     }
 }
 

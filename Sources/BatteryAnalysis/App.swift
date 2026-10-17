@@ -10,6 +10,40 @@ final class UIState: ObservableObject {
 
 extension Notification.Name {
     static let showDashboard = Notification.Name("batteryanalysis.showDashboard")
+    /// Sent between copies of the app: a second copy asks the running one to open its dashboard.
+    static let showDashboardFromOtherCopy = Notification.Name("local.batteryanalysis.showDashboard")
+}
+
+/// Keeps a single copy running. The login agent starts the executable directly, which skips the
+/// check macOS normally does when opening an app, so a copy reopened after a restart used to run
+/// alongside it, both sampling and writing the same history.
+enum SingleInstance {
+    /// Held for the life of the process; the system releases the lock when it exits.
+    private static var lockFile: Int32 = -1
+
+    /// Called before anything else starts. If another copy holds the lock, hands over to it
+    /// (asking it to open the dashboard, unless this was a background launch) and exits.
+    static func exitIfAlreadyRunning() {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("BatteryAnalysis")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let fd = open(dir.appendingPathComponent("running.lock").path, O_CREAT | O_RDWR | O_CLOEXEC, 0o644)
+        guard fd >= 0 else { return }   // can't tell; better to run than to refuse
+        if flock(fd, LOCK_EX | LOCK_NB) == 0 {
+            lockFile = fd
+            return
+        }
+        if !CommandLine.arguments.contains("--background") {
+            DistributedNotificationCenter.default().postNotificationName(
+                .showDashboardFromOtherCopy, object: nil, userInfo: nil, deliverImmediately: true)
+            if let id = Bundle.main.bundleIdentifier {
+                let me = ProcessInfo.processInfo.processIdentifier
+                NSRunningApplication.runningApplications(withBundleIdentifier: id)
+                    .first { $0.processIdentifier != me }?.activate()
+            }
+        }
+        exit(0)
+    }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
@@ -21,6 +55,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
         LaunchAtLogin.repairIfMoved()
+        LaunchAtLogin.syncRelaunch()
+        DistributedNotificationCenter.default().addObserver(forName: .showDashboardFromOtherCopy, object: nil, queue: .main) { _ in
+            NotificationCenter.default.post(name: .showDashboard, object: nil)
+        }
         Task { @MainActor in
             Alerts.shared.registerCategories()
             LiveWatts.shared.configure()
@@ -134,8 +172,11 @@ struct BatteryAnalysisApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     // Plain references, not @StateObject: the top level must not observe these, or every new
     // sample would rebuild every scene. Views that need updates observe what they use.
-    private let tracker = Tracker.shared
-    private let settings = Settings.shared
+    // Computed, so nothing (sampling included) starts before the single-instance check in init.
+    private var tracker: Tracker { .shared }
+    private var settings: Settings { .shared }
+
+    init() { SingleInstance.exitIfAlreadyRunning() }
 
     var body: some Scene {
         Window("Battery Analysis", id: "main") {
