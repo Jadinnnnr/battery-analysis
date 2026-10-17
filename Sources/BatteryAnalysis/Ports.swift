@@ -92,6 +92,23 @@ enum PortScanner {
         return out
     }
 
+    /// A port that's powering the Mac: its USB-C power negotiation has a winning option.
+    struct PowerSource {
+        let port: String        // "Port-USB-C@4" or "Port-MagSafe 3@1"
+        let ratedWatts: Double? // what the charger agreed to supply, e.g. 24.9 for 9 V × 2.77 A
+    }
+
+    static func powerSources() -> [PowerSource] {
+        var out: [PowerSource] = []
+        forEach(matching: "IOPortFeaturePowerSource") { e in
+            guard let option: [String: Any] = prop(e, "WinningPowerSourceOption"),
+                  let desc: String = prop(e, "Description"),
+                  let port = desc.components(separatedBy: "/").first else { return }
+            out.append(PowerSource(port: port, ratedWatts: (option["Max Power (mW)"] as? Int).map { Double($0) / 1000 }))
+        }
+        return out
+    }
+
     static func usbDevices() -> [USBDevice] {
         var out: [USBDevice] = []
         forEach(matching: "IOUSBHostDevice") { e in
@@ -180,7 +197,12 @@ final class ConnectedDevices: ObservableObject {
     func refresh() {
         guard available else { return }
         let ports = PortScanner.usbCPorts()
-        let active = ports.filter(\.active)
+        var active = ports.filter(\.active)
+        // A port charging the Mac isn't a device, even if it still has the last device's name.
+        if !active.isEmpty {
+            let charging = Set(PortScanner.powerSources().map(\.port))
+            active.removeAll { charging.contains($0.id) }
+        }
         // Nothing plugged in: skip the sensor reads entirely.
         guard !active.isEmpty else {
             if !devices.isEmpty { devices = [] }
@@ -237,5 +259,50 @@ final class ConnectedDevices: ObservableObject {
         let drawing = readings.filter { $0.value.amps > 0.05 && $0.value.volts > 0 && $0.value.volts <= 6 }
         guard active.count == 1, drawing.count == 1, let n = drawing.first?.key else { return nil }
         return (active[0], n)
+    }
+}
+
+/// The charger powering the Mac, if any, and how much power is coming in from it.
+struct Charger: Equatable {
+    let port: String?       // "Port-USB-C@4", or nil if no port claims it
+    let ratedWatts: Double?
+    let watts: Double       // coming in right now
+
+    /// "MagSafe", "USB-C ④", or "" when the port isn't known.
+    var portLabel: String {
+        guard let port else { return "" }
+        if port.contains("MagSafe") { return "MagSafe" }
+        if let n = port.split(separator: "@").last.flatMap({ Int($0) }) { return "USB-C \(portBadge(n))" }
+        return ""
+    }
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.port == b.port && a.ratedWatts?.rounded() == b.ratedWatts?.rounded() && wattsText(a.watts) == wattsText(b.watts)
+    }
+}
+
+/// Power coming into the Mac from a charger, from the SMC's DC-in sensors: "PDTR" (watts) and
+/// "VD0R" (volts, near zero when nothing is connected). Both match what the battery reports
+/// as SystemPowerIn, but update every reading instead of every minute or so.
+@MainActor
+final class PowerInflow: ObservableObject {
+    static let shared = PowerInflow()
+    @Published private(set) var charger: Charger?
+
+    private let power = SMC.shared?.floatKey("PDTR")
+    private let voltage = SMC.shared?.floatKey("VD0R")
+
+    var available: Bool { power != nil && voltage != nil }
+
+    func refresh() {
+        guard let power, let voltage, let v = SMC.shared?.read(voltage) else { return }
+        // Chargers supply 5 V or more; on battery this reads a few hundredths of a volt.
+        guard v > 3, let w = SMC.shared?.read(power) else {
+            if charger != nil { charger = nil }
+            return
+        }
+        let source = PortScanner.powerSources().first
+        let c = Charger(port: source?.port, ratedWatts: source?.ratedWatts, watts: max(0, w))
+        if c != charger { charger = c }
     }
 }

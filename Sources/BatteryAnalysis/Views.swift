@@ -316,7 +316,7 @@ struct DashboardView: View {
             BatteryRing(info: b)
             VStack(alignment: .leading, spacing: 8) {
                 Text(statusText(b)).font(.subheadline).foregroundStyle(.secondary)
-                ConnectedDevicesChips()
+                PowerChips()
                 if let top = a.ranked.first {
                     HStack(spacing: 12) {
                         AppIcon(name: top.name, size: 40)
@@ -518,7 +518,7 @@ struct MenuBarView: View {
                 Spacer()
                 Text(statusText(tracker.battery)).font(.caption).foregroundStyle(.secondary)
             }
-            ConnectedDevicesSection()
+            PowerSection()
             Divider()
             Text("Biggest drains · last hour").font(.caption).foregroundStyle(.secondary)
             if a.ranked.isEmpty { Text("Collecting data…").font(.callout) }
@@ -547,67 +547,106 @@ struct MenuBarView: View {
     }
 }
 
-/// Total power the Mac is drawing, for showing next to connected devices.
+/// Total power the Mac is drawing, for showing next to the charger and connected devices.
 @MainActor
 private func totalWatts(_ live: LiveWatts, _ status: MenuBarStatus) -> Double? { live.watts ?? status.fallbackWatts }
 
-/// Devices plugged into the Mac and the power each is drawing from it, in the menu bar popover.
-/// Its own view so device readings redraw only this section.
-struct ConnectedDevicesSection: View {
+/// Power coming in from a charger: the fast sensor, or battery telemetry where there isn't one.
+@MainActor
+private func powerIn(_ inflow: PowerInflow, _ status: MenuBarStatus) -> Double? { inflow.charger?.watts ?? status.fallbackPowerIn }
+
+/// "+12 W" charging, "−3 W" when the charger can't keep up, or "Not charging" (for example
+/// while Optimized Battery Charging holds the battery at 80-90%).
+func batteryRateText(_ w: Double?) -> String {
+    guard let w else { return "—" }
+    if w > 0.3 { return "+\(wattsText(w))" }
+    if w < -0.3 { return "−\(wattsText(-w))" }
+    return "Not charging"
+}
+
+/// Where power is going: the charger coming in, the battery, the Mac and each connected device.
+/// In the menu bar popover while a charger or a device is connected. Its own view so live
+/// readings redraw only this section.
+struct PowerSection: View {
+    @EnvironmentObject var tracker: Tracker
     @ObservedObject private var connected = ConnectedDevices.shared
+    @ObservedObject private var inflow = PowerInflow.shared
     @ObservedObject private var live = LiveWatts.shared
     @ObservedObject private var status = MenuBarStatus.shared
 
     var body: some View {
-        if !connected.devices.isEmpty {
+        let incoming = powerIn(inflow, status)
+        if incoming != nil || !connected.devices.isEmpty {
             Divider()
-            HStack {
-                Text("Connected devices").font(.caption).foregroundStyle(.secondary)
-                Spacer()
+            Text("Power").font(.caption).foregroundStyle(.secondary)
+            if let incoming {
+                row("powerplug.fill", "Charger", chargerDetail, "↓ \(wattsText(incoming))")
+                    .help("Power coming in from the charger")
+                row("battery.100percent.bolt", "Battery", nil, batteryRateText(tracker.health?.batteryWatts))
+                    .help("Power going into the battery, or out of it if the charger can't keep up")
+            }
+            if let w = totalWatts(live, status) {
+                row("laptopcomputer", "Mac total", nil, wattsText(w))
+                    .help("Everything your Mac is using, including connected devices")
+            }
+            ForEach(connected.devices) { d in
+                row(d.kind.symbol, d.name, portBadge(d.port), deviceWattsText(d.watts))
+                    .help("Power your Mac is supplying to this device on USB-C port \(d.port)")
+            }
+        }
+    }
+
+    /// "USB-C ④ · 25 W", from whichever parts are known.
+    private var chargerDetail: String? {
+        guard let c = inflow.charger else { return nil }
+        let parts = [c.portLabel, c.ratedWatts.map { "\(Int($0.rounded())) W" } ?? ""].filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private func row(_ symbol: String, _ name: String, _ detail: String?, _ value: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol).frame(width: 20)
+            Text(name).lineLimit(1)
+            if let detail { Text(detail).foregroundStyle(.secondary).lineLimit(1) }
+            Spacer()
+            Text(value).monospacedDigit().foregroundStyle(.secondary)
+        }
+        .font(.callout)
+    }
+}
+
+/// The same as compact chips under the dashboard's battery status.
+struct PowerChips: View {
+    @EnvironmentObject var tracker: Tracker
+    @ObservedObject private var connected = ConnectedDevices.shared
+    @ObservedObject private var inflow = PowerInflow.shared
+    @ObservedObject private var live = LiveWatts.shared
+    @ObservedObject private var status = MenuBarStatus.shared
+
+    var body: some View {
+        let incoming = powerIn(inflow, status)
+        if incoming != nil || !connected.devices.isEmpty {
+            HStack(spacing: 8) {
+                if let incoming {
+                    chip("powerplug.fill", "↓ \(wattsText(incoming)) in · battery \(batteryRateText(tracker.health?.batteryWatts))")
+                        .help("Power coming in from the charger, and how much of it goes into the battery")
+                }
+                ForEach(connected.devices) { d in
+                    chip(d.kind.symbol, "\(d.name) \(portBadge(d.port)) · \(deviceWattsText(d.watts))")
+                        .help("Power your Mac is supplying to this device on USB-C port \(d.port)")
+                }
                 if let w = totalWatts(live, status) {
                     Text("Mac total \(wattsText(w))").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
             }
-            ForEach(connected.devices) { d in
-                HStack(spacing: 8) {
-                    Image(systemName: d.kind.symbol).frame(width: 20)
-                    Text(d.name).lineLimit(1)
-                    Text(portBadge(d.port)).foregroundStyle(.secondary)
-                    Spacer()
-                    Text(deviceWattsText(d.watts)).monospacedDigit().foregroundStyle(.secondary)
-                }
-                .font(.callout)
-                .help("Power your Mac is supplying to this device on USB-C port \(d.port)")
-            }
         }
     }
-}
 
-/// The same devices as compact chips under the dashboard's battery status.
-struct ConnectedDevicesChips: View {
-    @ObservedObject private var connected = ConnectedDevices.shared
-    @ObservedObject private var live = LiveWatts.shared
-    @ObservedObject private var status = MenuBarStatus.shared
-
-    var body: some View {
-        if !connected.devices.isEmpty {
-            HStack(spacing: 8) {
-                ForEach(connected.devices) { d in
-                    Label {
-                        Text("\(d.name) \(portBadge(d.port)) · \(deviceWattsText(d.watts))").monospacedDigit().lineLimit(1)
-                    } icon: {
-                        Image(systemName: d.kind.symbol)
-                    }
-                    .font(.caption)
-                    .padding(.horizontal, 9).padding(.vertical, 4)
-                    .background(Capsule().fill(Color.white.opacity(0.08)))
-                    .help("Power your Mac is supplying to this device on USB-C port \(d.port)")
-                }
-                if let w = totalWatts(live, status) {
-                    Text("of \(wattsText(w)) total").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                }
-            }
-        }
+    private func chip(_ symbol: String, _ text: String) -> some View {
+        Label { Text(text).monospacedDigit().lineLimit(1) } icon: { Image(systemName: symbol) }
+            .font(.caption)
+            .padding(.horizontal, 9).padding(.vertical, 4)
+            .background(Capsule().fill(Color.white.opacity(0.08)))
     }
 }
 

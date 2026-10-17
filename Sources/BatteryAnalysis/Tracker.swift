@@ -9,6 +9,7 @@ final class MenuBarStatus: ObservableObject {
     static let shared = MenuBarStatus()
     @Published var suggesting = false
     @Published var fallbackWatts: Double?   // battery telemetry, used when the fast sensor isn't available
+    @Published var fallbackPowerIn: Double? // the same for power coming in from a charger
 }
 
 @MainActor
@@ -157,6 +158,8 @@ final class Tracker: ObservableObject {
         if status.suggesting != suggesting { status.suggesting = suggesting }
         let fw = health?.systemWatts
         if status.fallbackWatts.map(wattsText) != fw.map(wattsText) { status.fallbackWatts = fw }
+        let fin = health?.powerIn
+        if status.fallbackPowerIn.map(wattsText) != fin.map(wattsText) { status.fallbackPowerIn = fin }
     }
 
     private func record(_ rows: [Int32: Double]) {

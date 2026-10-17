@@ -60,6 +60,10 @@ struct InsightsView: View {
                     if let c = h.cycles { row("Charge cycles", "\(c)") }
                     if let w = h.systemWatts { LiveWattsRow(fallback: w) }
                     if let a = h.adapterWatts, tracker.battery.pluggedIn { row("Charger", "\(a) W") }
+                    if tracker.battery.pluggedIn {
+                        LiveInflowRow(fallback: h.powerIn)
+                        row("Battery", batteryRateText(h.batteryWatts))
+                    }
                 }
             } else {
                 Text("No battery detected.").foregroundStyle(.secondary)
@@ -112,6 +116,22 @@ private struct LiveWattsRow: View {
             Text(String(format: "%.1f W", live.watts ?? fallback)).font(.callout.monospacedDigit().weight(.medium))
         }
         .font(.callout)
+    }
+}
+
+/// "Coming in", kept in its own view so live readings redraw only this line.
+private struct LiveInflowRow: View {
+    @ObservedObject private var inflow = PowerInflow.shared
+    let fallback: Double?
+    var body: some View {
+        if let w = inflow.charger?.watts ?? fallback {
+            HStack {
+                Text("Coming in").foregroundStyle(.secondary)
+                Spacer()
+                Text(String(format: "%.1f W", w)).font(.callout.monospacedDigit().weight(.medium))
+            }
+            .font(.callout)
+        }
     }
 }
 

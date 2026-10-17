@@ -156,3 +156,19 @@ final class PortBadgeTests: XCTestCase {
         XCTAssertEqual(portBadge(0), "#0")
     }
 }
+
+final class InflowTests: XCTestCase {
+    func testChargerPortLabels() {
+        XCTAssertEqual(Charger(port: "Port-USB-C@4", ratedWatts: 25, watts: 22).portLabel, "USB-C ④")
+        XCTAssertEqual(Charger(port: "Port-MagSafe 3@1", ratedWatts: 96, watts: 60).portLabel, "MagSafe")
+        XCTAssertEqual(Charger(port: nil, ratedWatts: nil, watts: 5).portLabel, "")
+    }
+
+    func testBatteryRate() {
+        XCTAssertEqual(batteryRateText(12.9), "+13 W")
+        XCTAssertEqual(batteryRateText(-3.2), "−3.2 W")
+        // Optimized Battery Charging holds the battery: tiny currents aren't charging.
+        XCTAssertEqual(batteryRateText(0.1), "Not charging")
+        XCTAssertEqual(batteryRateText(nil), "—")
+    }
+}

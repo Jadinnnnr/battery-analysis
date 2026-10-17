@@ -71,14 +71,14 @@ final class LiveWatts: ObservableObject {
     var sensorAvailable: Bool { pstr != nil }
 
     /// Starts, restarts or stops polling to match the current settings. The same tick also
-    /// updates connected devices, so they share one wakeup.
+    /// updates the charger and connected devices, so they share one wakeup.
     func configure() {
         timer?.invalidate()
         timer = nil
         let settings = Settings.shared
         let devices = ConnectedDevices.shared
         if !settings.showWatts { watts = nil }
-        guard (settings.showWatts && pstr != nil) || devices.available else { return }
+        guard (settings.showWatts && pstr != nil) || devices.available || PowerInflow.shared.available else { return }
         let interval = Double(settings.wattsInterval)
         tick()
         let t = Timer(timeInterval: interval, repeats: true) { _ in
@@ -91,9 +91,11 @@ final class LiveWatts: ObservableObject {
 
     private func tick() {
         let devices = ConnectedDevices.shared
+        let inflow = PowerInflow.shared
+        inflow.refresh()
         devices.refresh()
-        // The total is also read while devices are connected, so it can be shown next to them.
-        if Settings.shared.showWatts || !devices.devices.isEmpty {
+        // The total is also read while a charger or devices are connected, to show next to them.
+        if Settings.shared.showWatts || !devices.devices.isEmpty || inflow.charger != nil {
             refresh()
         } else if watts != nil {
             watts = nil

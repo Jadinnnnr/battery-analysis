@@ -15,8 +15,8 @@ Activity Monitor shows energy use for the last 12 hours, but it lists system pro
 - Gives each system process a one-line description and marks it Critical, Important or Optional, so you know whether it's safe to quit.
 - Charts energy use over time and battery level. Click an app to see its own history and trend.
 - Shows battery health (capacity, cycle count), a weekly summary, and how usage differs on battery vs. plugged in.
-- Shows your Mac's current power draw next to the ⚡ in the menu bar.
-- Lists devices plugged into the USB-C ports (iPhone, iPad, drives and so on) with the power each is drawing from your Mac, next to the Mac's total. In the menu bar they appear by port number, e.g. `22 W  ④ 15 W`.
+- Shows your Mac's current power draw next to the ⚡ in the menu bar, and while it's plugged in, the power coming in from the charger and how much of it is going into the battery.
+- Lists devices plugged into the USB-C ports (iPhone, iPad, drives and so on) with the power each is drawing from your Mac, next to the Mac's total. In the menu bar they appear by port number after the total and any power coming in, e.g. `11 W  ↓22 W  ④ 15 W`.
 - Suggests Low Power Mode when the battery is low and power draw is high, and turns the ⚡ yellow. Customizable thresholds.
 - Notifies you when one app is using most of your energy, or when the battery is low. Both are on by default and can be turned off in Settings.
 - Lets you quit or force quit a process from the list, after confirming. The dialog says how many processes that covers. Processes macOS needs are locked.
@@ -55,7 +55,9 @@ The app keeps one `top` process running in logging mode and reads each process's
 
 The menu bar wattage comes from the Mac's system power sensor (SMC key `PSTR`), read every 5 seconds by default (2 and 10 are options). Macs without that sensor fall back to the battery's own reading, which macOS only refreshes about once a minute.
 
-Connected devices come from the USB-C port controllers, which report what's attached, and the SMC's per-port current and voltage sensors (`D1JI`/`D1JV` and so on). Which sensor belongs to which port isn't documented: the app assumes they follow port order, and corrects that the first time it sees a single device plugged in. Ports above 5 V are taking power in from a charger, so they aren't listed.
+Connected devices come from the USB-C port controllers, which report what's attached, and the SMC's per-port current and voltage sensors (`D1JI`/`D1JV` and so on). Which sensor belongs to which port isn't documented: the app assumes they follow port order, and corrects that the first time it sees a single device plugged in. A port charging the Mac isn't listed as a device.
+
+Power coming in comes from the SMC's DC-in sensors (`PDTR` for watts, `VD0R` for volts), which agree with the battery's own `SystemPowerIn` but update every few seconds. The charger's port and rating come from its USB-C power negotiation, and the battery's charge rate from its voltage and current. Macs without those sensors use the battery's figure, which updates about once a minute.
 
 In testing on an Apple Silicon MacBook, the app used about 0.3% of one CPU core and its `top` process about another 0.3%. Updating the wattage every 2 seconds instead of 5 adds roughly 0.2%.
 
@@ -96,7 +98,7 @@ defaults delete local.batteryanalysis
 | `Sampler.swift` | `top` stream, PID-to-app mapping, battery state |
 | `LivePower.swift` | SMC sensor reads, menu bar wattage |
 | `Health.swift` | Battery health, Low Power Mode state |
-| `Ports.swift` | Connected devices and per-port power |
+| `Ports.swift` | Connected devices, per-port power, charger input |
 | `Tracker.swift` | History storage and the main analysis |
 | `Analytics.swift` | Per-app history, weekly summary, CSV export |
 | `Views.swift` | Dashboard and menu bar popover |

@@ -7,6 +7,8 @@ struct BatteryHealth: Equatable {
     var cycles: Int?
     var systemWatts: Double?  // whole-system power draw right now
     var adapterWatts: Int?    // rating of the connected charger
+    var powerIn: Double?      // power coming in from the charger; nil on battery
+    var batteryWatts: Double? // into the battery (positive, charging) or out of it (negative)
 
     var condition: String {
         guard let m = maxCapacity else { return "Unknown" }
@@ -38,6 +40,13 @@ enum HealthReader {
             h.systemWatts = abs(Double(v) * Double(mA)) / 1_000_000
         }
         if let ad = d["AdapterDetails"] as? [String: Any] { h.adapterWatts = ad["Watts"] as? Int }
+        if d["ExternalConnected"] as? Bool == true,
+           let t = d["PowerTelemetryData"] as? [String: Any], let mW = t["SystemPowerIn"] as? Int {
+            h.powerIn = Double(mW) / 1000
+        }
+        if let v = d["Voltage"] as? Int, let a = d["Amperage"] as? NSNumber {
+            h.batteryWatts = Double(v) * Double(Int64(bitPattern: a.uint64Value)) / 1_000_000
+        }
         return h
     }
 }
