@@ -21,6 +21,7 @@ Activity Monitor shows energy use for the last 12 hours, but it lists system pro
 - Notifies you when one app is using most of your energy, or when the battery is low. Both are on by default and can be turned off in Settings.
 - Lets you quit or force quit a process from the list, after confirming. The dialog says how many processes that covers. Processes macOS needs are locked.
 - Search, filter to apps only or time on battery, and export to CSV.
+- A Stats tab, just for fun: running totals of the energy your Mac has used (split by app), taken in from chargers and given to connected devices, with everyday equivalents, an electricity cost estimate and records.
 
 It runs from the menu bar and only appears in the Dock while the dashboard is open.
 
@@ -59,13 +60,15 @@ Connected devices come from the USB-C port controllers, which report what's atta
 
 Power coming in comes from the SMC's DC-in sensors (`PDTR` for watts, `VD0R` for volts), which agree with the battery's own `SystemPowerIn` but update every few seconds. The charger's port and rating come from its USB-C power negotiation, and the battery's charge rate from its voltage and current. Macs without those sensors use the battery's figure, which updates about once a minute.
 
+The Stats tab adds those readings up every 10 seconds while the Mac is awake: the Mac's total, power coming in, power into the battery and power out to each device, in watt-hours. Energy per app is an estimate: the Mac's own share (its total minus what devices drew) is split by each app's share of Energy Impact in the next sample, so it includes shared costs like the display. Time asleep isn't counted, and totals start when you install this version; older history only has Energy Impact scores, not watts.
+
 In testing on an Apple Silicon MacBook, the app used about 0.3% of one CPU core and its `top` process about another 0.3%. Updating the wattage every 2 seconds instead of 5 adds roughly 0.2%.
 
 ## Privacy
 
 There's no network code, and the app never asks for administrator rights. It writes to:
 
-- `~/Library/Application Support/BatteryAnalysis/`: usage history, deleted after 30 days
+- `~/Library/Application Support/BatteryAnalysis/`: usage history, deleted after 30 days, and `stats.json`, the Stats tab's totals, kept until you reset them
 - `~/Library/Preferences/local.batteryanalysis.plist`: settings
 - `~/Library/LaunchAgents/local.batteryanalysis.login.plist`: only if you turn on launch at login
 
@@ -99,6 +102,8 @@ defaults delete local.batteryanalysis
 | `LivePower.swift` | SMC sensor reads, menu bar wattage |
 | `Health.swift` | Battery health, Low Power Mode state |
 | `Ports.swift` | Connected devices, per-port power, charger input |
+| `Stats.swift` | Running energy totals for the Stats tab |
+| `StatsView.swift` | The Stats tab |
 | `Tracker.swift` | History storage and the main analysis |
 | `Analytics.swift` | Per-app history, weekly summary, CSV export |
 | `Views.swift` | Dashboard and menu bar popover |

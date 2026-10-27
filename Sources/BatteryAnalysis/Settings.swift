@@ -74,6 +74,8 @@ final class Settings: ObservableObject {
     @Published var lpmWatts: Int { didSet { d.set(lpmWatts, forKey: "lpmWatts"); Tracker.shared.syncMenuBar() } }
     @Published var lpmCritical: Int { didSet { d.set(lpmCritical, forKey: "lpmCritical"); Tracker.shared.syncMenuBar() } }
     @Published var lowBatteryPercent: Int { didSet { d.set(lowBatteryPercent, forKey: "lowBatteryPercent") } }
+    /// Electricity price per kWh for the Stats tab's cost estimate, in the local currency.
+    @Published var kwhPrice: Double { didSet { d.set(kwhPrice, forKey: "kwhPrice") } }
 
     func resetLimits() {
         let l = Settings.defaultLimits
@@ -93,5 +95,6 @@ final class Settings: ObservableObject {
         lowBatteryPercent = d.object(forKey: "lowBatteryPercent") as? Int ?? l.lowBattery
         drainAlerts = d.object(forKey: "drainAlerts") as? Bool ?? true
         lowBatteryAlerts = d.object(forKey: "lowBatteryAlerts") as? Bool ?? true
+        kwhPrice = d.object(forKey: "kwhPrice") as? Double ?? 0.17   // about the US average
     }
 }

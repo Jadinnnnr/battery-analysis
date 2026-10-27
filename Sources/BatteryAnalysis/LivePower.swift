@@ -102,6 +102,13 @@ final class LiveWatts: ObservableObject {
         }
     }
 
+    /// One reading without publishing anything, for the energy totals. They need the Mac's power
+    /// even when the menu bar isn't showing it.
+    func currentReading() -> Double? {
+        guard let pstr, let w = SMC.shared?.read(pstr), w >= 0 else { return nil }
+        return w
+    }
+
     /// Only publishes when the displayed text changes, so unchanged readings redraw nothing.
     private func refresh() {
         guard let pstr, let w = SMC.shared?.read(pstr), w >= 0 else { return }

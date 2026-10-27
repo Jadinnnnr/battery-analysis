@@ -276,6 +276,12 @@ struct Charger: Equatable {
         return ""
     }
 
+    /// "USB-C ④ · 25 W", from whichever parts are known; nil when neither is.
+    var detail: String? {
+        let parts = [portLabel, ratedWatts.map { "\(Int($0.rounded())) W" } ?? ""].filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     static func == (a: Self, b: Self) -> Bool {
         a.port == b.port && a.ratedWatts?.rounded() == b.ratedWatts?.rounded() && wattsText(a.watts) == wattsText(b.watts)
     }

@@ -172,3 +172,96 @@ final class InflowTests: XCTestCase {
         XCTAssertEqual(batteryRateText(nil), "—")
     }
 }
+
+final class EnergyLedgerTests: XCTestCase {
+    private var utc: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c
+    }()
+    private let noon = 1_790_000_000.0 - 1_790_000_000.0.truncatingRemainder(dividingBy: 86400) + 43200   // 12:00 UTC
+
+    func testGapsAreNotCounted() {
+        XCTAssertEqual(EnergyLedger.slice(dt: 10), 10)
+        XCTAssertNil(EnergyLedger.slice(dt: 61))    // slept
+        XCTAssertNil(EnergyLedger.slice(dt: -5))    // clock went back
+        var l = EnergyLedger(since: noon)
+        l.add(at: noon, dt: 3600, mac: 10, inflow: nil, battery: nil, devices: [:], charger: nil, calendar: utc)
+        XCTAssertTrue(l.days.isEmpty)
+    }
+
+    func testAddIntegratesWattsIntoWattHours() {
+        var l = EnergyLedger(since: noon)
+        // 360 slices of 10 s = one hour at 20 W in, 12 W used, 15 W to an iPhone, 6 W into the battery.
+        for i in 0..<360 {
+            l.add(at: noon + Double(i) * 10, dt: 10, mac: 27, inflow: 20, battery: 6,
+                  devices: ["iPhone": 15], charger: "USB-C ④ · 25 W", calendar: utc)
+        }
+        let d = l.days.values.first!
+        XCTAssertEqual(d.mac, 27, accuracy: 1e-9)
+        XCTAssertEqual(d.appsPool, 12, accuracy: 1e-9)     // the iPhone's share isn't any app's
+        XCTAssertEqual(d.devices["iPhone"]!, 15, accuracy: 1e-9)
+        XCTAssertEqual(d.inflow, 20, accuracy: 1e-9)
+        XCTAssertEqual(d.chargers["USB-C ④ · 25 W"]!, 20, accuracy: 1e-9)
+        XCTAssertEqual(d.battery, 6, accuracy: 1e-9)
+        XCTAssertEqual(d.seconds, 3600)
+        XCTAssertEqual(d.peakIn, 20)
+    }
+
+    func testDischargingIsNotChargingTheBattery() {
+        var l = EnergyLedger(since: noon)
+        l.add(at: noon, dt: 10, mac: 8, inflow: nil, battery: -8, devices: [:], charger: nil, calendar: utc)
+        XCTAssertEqual(l.days.values.first!.battery, 0)
+    }
+
+    func testAppsSplitTheirPoolByEnergyImpact() {
+        var l = EnergyLedger(since: noon)
+        l.add(at: noon, dt: 36, mac: 100, inflow: nil, battery: nil, devices: [:], charger: nil, calendar: utc)   // 1 Wh
+        l.attributeApps(impacts: [:])   // nothing to split by: the pool waits
+        XCTAssertEqual(l.days.values.first!.appsPool, 1, accuracy: 1e-9)
+        l.attributeApps(impacts: ["Safari": 30, "Xcode": 10, "idle": 0])
+        let d = l.days.values.first!
+        XCTAssertEqual(d.apps["Safari"]!, 0.75, accuracy: 1e-9)
+        XCTAssertEqual(d.apps["Xcode"]!, 0.25, accuracy: 1e-9)
+        XCTAssertNil(d.apps["idle"])
+        XCTAssertEqual(d.appsPool, 0)
+    }
+
+    func testPeriodsAndRecords() {
+        var l = EnergyLedger(since: noon - 40 * 86400)
+        for daysAgo in [0, 1, 6, 7, 29, 30] {
+            let t = noon - Double(daysAgo) * 86400
+            l.add(at: t, dt: 36, mac: 100 + Double(daysAgo), inflow: Double(daysAgo), battery: nil,
+                  devices: [:], charger: nil, calendar: utc)
+        }
+        func mac(_ p: StatsPeriod) -> Double { l.totals(for: p, now: noon, calendar: utc).mac }
+        XCTAssertEqual(mac(.today), 1.0, accuracy: 1e-9)
+        XCTAssertEqual(mac(.week), (300 + 1 + 6) / 100, accuracy: 1e-9)          // today, 1 and 6 days ago
+        XCTAssertEqual(mac(.month), (500 + 1 + 6 + 7 + 29) / 100, accuracy: 1e-9)   // up to 29 days ago
+        XCTAssertEqual(mac(.all), (600 + 1 + 6 + 7 + 29 + 30) / 100, accuracy: 1e-9)
+
+        let r = l.records
+        XCTAssertEqual(r.biggestDay?.wh ?? 0, 1.3, accuracy: 1e-9)
+        XCTAssertEqual(r.peakCharging?.watts, 30)
+        XCTAssertEqual(r.biggestDay?.day, EnergyLedger.dayKey(noon - 30 * 86400, calendar: utc))
+    }
+
+    func testCodableRoundTrip() throws {
+        var l = EnergyLedger(since: noon)
+        l.add(at: noon, dt: 10, mac: 9, inflow: 20, battery: 5, devices: ["iPhone": 4], charger: "MagSafe · 96 W", calendar: utc)
+        l.attributeApps(impacts: ["Safari": 1])
+        l.deviceSymbols["iPhone"] = "iphone"
+        let back = try JSONDecoder().decode(EnergyLedger.self, from: JSONEncoder().encode(l))
+        XCTAssertEqual(back, l)
+    }
+
+    func testFormatting() {
+        XCTAssertEqual(energyText(0.42), "0.4 Wh")
+        XCTAssertEqual(energyText(742.4), "742 Wh")
+        XCTAssertEqual(energyText(1240), "1.24 kWh")
+        XCTAssertEqual(durationText(45), "45 s")
+        XCTAssertEqual(durationText(3 * 3600 + 300), "3 h 5 min")
+        XCTAssertEqual(durationText(52 * 3600), "2 d 4 h")
+        XCTAssertEqual(approx(3.24), "3.2")
+    }
+}

@@ -9,6 +9,7 @@ struct BatteryHealth: Equatable {
     var adapterWatts: Int?    // rating of the connected charger
     var powerIn: Double?      // power coming in from the charger; nil on battery
     var batteryWatts: Double? // into the battery (positive, charging) or out of it (negative)
+    var capacityWh: Double?   // what a full charge holds now
 
     var condition: String {
         guard let m = maxCapacity else { return "Unknown" }
@@ -31,6 +32,7 @@ enum HealthReader {
            let design = bd["DesignCapacity"] as? Int, design > 0,
            let nominal = (bd["NominalChargeCapacity"] as? Int) ?? (d["AppleRawMaxCapacity"] as? Int) {
             h.maxCapacity = min(100, Int((Double(nominal) / Double(design) * 100).rounded()))
+            if let v = d["Voltage"] as? Int { h.capacityWh = Double(nominal) * Double(v) / 1_000_000 }
         }
         if let t = d["PowerTelemetryData"] as? [String: Any], let load = t["SystemLoad"] as? Int, load > 0 {
             h.systemWatts = Double(load) / 1000

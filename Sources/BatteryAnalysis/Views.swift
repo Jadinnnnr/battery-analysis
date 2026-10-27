@@ -113,8 +113,10 @@ func statusText(_ b: BatteryInfo) -> String {
 }
 
 enum DashTab: String, CaseIterable, Identifiable {
-    case overview = "Overview", insights = "Insights", settings = "Settings"
+    case overview = "Overview", insights = "Insights", stats = "Stats", settings = "Settings"
     var id: String { rawValue }
+    /// Tabs that follow the time range and filters (and show the battery summary above them).
+    var usesRange: Bool { self == .overview || self == .insights }
 }
 
 enum DashSheet: Identifiable {
@@ -204,11 +206,12 @@ struct DashboardView: View {
             ScrollView {
                 VStack(spacing: 18) {
                     controls
-                    if tab != .settings { hero(a) }
-                    if tab == .overview {
-                        if a.ranked.isEmpty { emptyState } else { overview(a) }
-                    } else {
-                        if tab == .insights { InsightsView(range: range, appsOnly: appsOnly) } else { SettingsView() }
+                    if tab.usesRange { hero(a) }
+                    switch tab {
+                    case .overview: if a.ranked.isEmpty { emptyState } else { overview(a) }
+                    case .insights: InsightsView(range: range, appsOnly: appsOnly)
+                    case .stats: StatsView()
+                    case .settings: SettingsView()
                     }
                     if tab == .insights {
                         Text("“Energy” is macOS’s Energy Impact score. It is a relative measure of power draw. Data stays on your computer and is kept for 30 days.")
@@ -261,11 +264,13 @@ struct DashboardView: View {
                 Picker("", selection: $tab) {
                     ForEach(DashTab.allCases) { Text($0.rawValue).tag($0) }
                 }
-                .pickerStyle(.segmented).frame(width: 270).labelsHidden()
-                Button { exportCSV() } label: { Image(systemName: "square.and.arrow.up") }
-                    .buttonStyle(.borderless).help("Export this range as CSV")
+                .pickerStyle(.segmented).frame(width: 350).labelsHidden()
+                if tab.usesRange {
+                    Button { exportCSV() } label: { Image(systemName: "square.and.arrow.up") }
+                        .buttonStyle(.borderless).help("Export this range as CSV")
+                }
             }
-            if tab != .settings { HStack(spacing: 16) {
+            if tab.usesRange { HStack(spacing: 16) {
                 Spacer()
                 Toggle("Apps only", isOn: $appsOnly).toggleStyle(.switch).controlSize(.small)
                     .help("Hide system processes")
@@ -580,7 +585,7 @@ struct PowerSection: View {
             Divider()
             Text("Power").font(.caption).foregroundStyle(.secondary)
             if let incoming {
-                row("powerplug.fill", "Charger", chargerDetail, "↓ \(wattsText(incoming))")
+                row("powerplug.fill", "Charger", inflow.charger?.detail, "↓ \(wattsText(incoming))")
                     .help("Power coming in from the charger")
                 row("battery.100percent.bolt", "Battery", nil, batteryRateText(tracker.health?.batteryWatts))
                     .help("Power going into the battery, or out of it if the charger can't keep up")
@@ -594,13 +599,6 @@ struct PowerSection: View {
                     .help("Power your Mac is supplying to this device on USB-C port \(d.port)")
             }
         }
-    }
-
-    /// "USB-C ④ · 25 W", from whichever parts are known.
-    private var chargerDetail: String? {
-        guard let c = inflow.charger else { return nil }
-        let parts = [c.portLabel, c.ratedWatts.map { "\(Int($0.rounded())) W" } ?? ""].filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     private func row(_ symbol: String, _ name: String, _ detail: String?, _ value: String) -> some View {

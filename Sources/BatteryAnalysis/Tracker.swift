@@ -149,6 +149,14 @@ final class Tracker: ObservableObject {
         let h = HealthReader.read()
         if h != health { health = h }
         syncMenuBar()
+        // The Stats tab's running totals: the fast sensors where the Mac has them, otherwise
+        // the battery's own figures.
+        EnergyStats.shared.record(
+            mac: LiveWatts.shared.currentReading() ?? health?.systemWatts,
+            inflow: PowerInflow.shared.available ? PowerInflow.shared.charger?.watts : health?.powerIn,
+            battery: health?.batteryWatts,
+            devices: ConnectedDevices.shared.devices,
+            charger: PowerInflow.shared.charger?.detail)
     }
 
     /// Updates the menu bar icon's inputs, publishing only real changes.
@@ -169,6 +177,7 @@ final class Tracker: ObservableObject {
         health = HealthReader.read()
         lowPower = LowPower.isEnabled()
         guard !apps.isEmpty else { return }
+        EnergyStats.shared.attributeApps(apps)
 
         // Keep the 12 heaviest apps per sample to bound storage.
         var a: [String: Double] = [:]
