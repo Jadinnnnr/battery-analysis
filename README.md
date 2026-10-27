@@ -28,7 +28,7 @@ It runs from the menu bar and only appears in the Dock while the dashboard is op
 ## Requirements
 
 macOS 14 or later
-Xcode or the Swift 5.9+ toolchain to build.
+Xcode or the Swift 5.9+ toolchain to build. On macOS 27, install Xcode: the macOS 27 Command Line Tools (27.0) can't build SwiftUI's `@State`, because the plugin it needs only ships with Xcode.
 
 Tested on Apple Silicon. An x86_64 build also works under Rosetta 2 on Apple Silicon, but I haven't tried it on a real Intel Mac, where the battery and power readings may differ.
 
@@ -47,6 +47,8 @@ Run the tests with:
 ```bash
 swift test
 ```
+
+The tests use Swift Testing, which comes with both Xcode and the Command Line Tools, version 16 or later (Swift 6).
 
 The app is ad-hoc signed and not notarized. A copy you build yourself opens normally. If you move a built copy to another Mac and macOS blocks it, go to System Settings › Privacy & Security and click Open Anyway.
 
